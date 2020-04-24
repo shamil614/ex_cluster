@@ -3,6 +3,7 @@ defmodule ExCluster.MixProject do
 
   def project do
     [
+      aliases: aliases(),
       app: :ex_cluster,
       version: "0.1.0",
       elixir: "~> 1.9",
@@ -19,13 +20,18 @@ defmodule ExCluster.MixProject do
     ]
   end
 
+  defp aliases() do
+    [
+      test: "test --no-start"
+    ]
+  end
+
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
       {:horde, "~> 0.7.1"},
-      {:libcluster, "~> 3.2.0"}
-      # {:dep_from_hexpm, "~> 0.3.0"},
-      # {:dep_from_git, git: "https://github.com/elixir-lang/my_dep.git", tag: "0.1.0"}
+      {:libcluster, "~> 3.2.0"},
+      {:local_cluster, "~> 1.1", only: [:test]}
     ]
   end
 end
