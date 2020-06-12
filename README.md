@@ -34,9 +34,9 @@ iex> Horde.DynamicSupervisor.start_child(ExCluster.OrderSupervisor, { ExCluster.
 * The last process indicates that it was started on the local node because of the first `0` in `#PID<0.350.0>`
 * Give the process some state by adding order contents 
 ```
-iex> Excluster.Order.add("John", [4,5])
+iex> ExCluster.Order.add("John", [4,5])
 :ok
-iex> Excluster.Order.contents("John")
+iex> ExCluster.Order.contents("John")
 [4,5]
 ```
 * Now that a local process is running with state, we can test what happens when the local node goes down. 
