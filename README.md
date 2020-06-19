@@ -2,53 +2,79 @@
 
 **Demo app for distributed Elixir via Horde and libCluster**
 
-## Version Basic
-This tagged version demos a basic distributed application. 
-The basic version shows how a Supervison tree is setup with Horde, and simple GenServer to hold state.
-Application nodes are set **statically**. GenServer **state is not recovered** on crash. 
-When a node goes down, the GenServer(s) started by `Horde.DynamicSupervisor` are moved to another node.
+## Version Dynamic Membership
+Building on top of [Version Basic](https://github.com/shamil614/ex_cluster/tree/vBasic). 
+This version adds dynamic cluster membership. Which means that each application evaluates the list of nodes in the
+cluster on a real time basis. Below is an excerpt from the `version basic`. 
 
-## Setup
-* From project root `mix deps.get`
-* Open a terminal (node1) and run ` iex --name node1@127.0.0.1 --cookie mycookie -S mix`
-* Open a terminal (node2) and run ` iex --name node2@127.0.0.1 --cookie mycookie -S mix`
-* Open a terminal (node3) and run ` iex --name node3@127.0.0.1 --cookie mycookie -S mix`
+```elixir
+# application.ex
 
-## Demo Distributed Elixir and Process monitoring
-* Start a GenServer, `ExCluster.Order`, via `Horde.DynamicSupervisor`.
-Run the following command in any terminal:
-`Horde.DynamicSupervisor.start_child(ExCluster.OrderSupervisor, { ExCluster.Order, "Mark" })`
-* The return value should look like `{:ok, #PID<15501.238.0>}`. Look closely at the pid. 
-If the first number is anything but a `0` then it means the process was started on a remote node.
-* Even though you started the process on node1, take a look at the other terminals (node2, node3). 
-They will indicate that a process was started on that node. `11:12:19.729 [info]  Starting Order for Mark`
-
-* Continue starting GenServers until you get a process that shows it was started on a local node.
+def start(_type, _args) do
+    children =
+      [
+        {Horde.Registry,
+         [name: ExCluster.OrderRegistry, keys: :unique, members: registry_members()]}, 
 ```
-iex> Horde.DynamicSupervisor.start_child(ExCluster.OrderSupervisor, { ExCluster.Order, "Paul" })
-{:ok, #PID<15500.279.0>}
+Keep in mind this code is run once at startup. The `registery_members()` does not get updated when a node joins or 
+leaves the cluster.
 
-iex> Horde.DynamicSupervisor.start_child(ExCluster.OrderSupervisor, { ExCluster.Order, "John" })
-{:ok,  #PID<0.350.0>}
-```
-* The last process indicates that it was started on the local node because of the first `0` in `#PID<0.350.0>`
-* Give the process some state by adding order contents 
-```
-iex> ExCluster.Order.add("John", [4,5])
-:ok
-iex> ExCluster.Order.contents("John")
-[4,5]
-```
-* Now that a local process is running with state, we can test what happens when the local node goes down. 
-In the local node run `:init.stop`
-* Look at the other terminals (the nodes that are still alive). One of them should show `Starting Order for John`.
-This means the `Cluster.Supervisor` detected the node going down and restarted the process on another node.
-* Now check the state of the process:
-```
-iex> Excluster.Order.contents("John")
-[]
-```
-* Note the empty state: `[]`. While the process was restarted, the state was not restored.
+The major changes are found in `ExCluster.ClusterConnector`.
+```elixir
+# cluster_connector.ex
+def init(_) do
+  :net_kernel.monitor_nodes(true, node_type: :visible)
+  {:ok, nil}
+end
 
+# example handle_callback
 
+def handle_info({:nodeup, _node, _node_type}, state) do
+  Logger.debug(fn ->
+    "Node up #{inspect(state)}"
+  end)
 
+  set_members(OrderRegistry)
+  set_members(OrderSupervisor)
+  {:noreply, state}
+end
+```
+Above you'll see that the `GenServer` is monitoring for node changes. 
+And updating the `OrderRegistry` and `OrderSupervisor`.
+
+Starting up `node1`
+`iex --name node1@127.0.0.1 --cookie mycookie -S mix`
+ you'll see this in the console:
+```
+10:14:54.324 [warn]  [libcluster:cluster] unable to connect to :"node2@127.0.0.1"
+
+10:14:54.326 [warn]  [libcluster:cluster] unable to connect to :"node3@127.0.0.1"
+```
+Obviously the other 2 nodes are not started yet.
+
+Starting up `node2` (in a new terminal)
+`iex --name node2@127.0.0.1 --cookie mycookie -S mix`
+ you'll see this in the console:
+```
+10:51:56.575 [info]  [libcluster:cluster] connected to :"node1@127.0.0.1"
+ 
+10:51:56.576 [warn]  [libcluster:cluster] unable to connect to :"node3@127.0.0.1"
+
+```
+See that `node2` can connect to `node1` and the makes sense `node1` was up and running when `node2` started.
+Go back to the terminal on `node1` and type `Node.list()`
+You'll see the following
+```elixir
+iex(node1@127.0.0.1)1> Node.list
+[:"node2@127.0.0.1"]
+```
+
+To verify our horde modules have dynamically added peers type
+```elixir
+iex(node1@127.0.0.1)4> Horde.Cluster.members(ExCluster.OrderRegistry)
+[
+  {ExCluster.OrderRegistry, :"node1@127.0.0.1"},
+  {ExCluster.OrderRegistry, :"node2@127.0.0.1"}
+]
+
+```
