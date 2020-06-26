@@ -3,13 +3,17 @@ defmodule ExCluster.Application do
   # for more information on OTP Applications
   @moduledoc false
 
+  require Logger
+
   use Application
 
   def start(_type, _args) do
     children =
       [
+        ExCluster.StateHandoff,
         ExCluster.OrderRegistry,
         ExCluster.OrderSupervisor,
+
         ExCluster.ClusterConnector
       ]
       |> maybe_start_cluster_supervisor(Mix.env())
